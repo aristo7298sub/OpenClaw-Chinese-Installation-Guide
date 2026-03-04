@@ -497,6 +497,12 @@ openclaw devices approve <请求ID>
 openclaw plugins install @openclaw/feishu
 ```
 
+验证插件安装成功：
+
+```bash
+openclaw plugins list
+```
+
 ### 9.2 在飞书开放平台创建应用
 
 #### Step 1 — 打开飞书开放平台
@@ -537,14 +543,20 @@ openclaw plugins install @openclaw/feishu
       "contact:user.employee_id:readonly",
       "corehr:file:download",
       "event:ip_list",
+      "docs:document.content:read",
+      "event:ip_list",
+      "im:chat",
       "im:chat.access_event.bot_p2p_chat:read",
       "im:chat.members:bot_access",
       "im:message",
       "im:message.group_at_msg:readonly",
+      "im:message.group_msg",
       "im:message.p2p_msg:readonly",
       "im:message:readonly",
       "im:message:send_as_bot",
-      "im:resource"
+      "im:resource",
+      "sheets:spreadsheet",
+      "wiki:wiki:readonly"
     ],
     "user": [
       "aily:file:read",
@@ -554,6 +566,8 @@ openclaw plugins install @openclaw/feishu
   }
 }
 ```
+
+> **说明**：`docs:document.content:read`、`sheets:spreadsheet`、`wiki:wiki:readonly` 权限用于支持 `feishu_doc`、`feishu_wiki`、`feishu_drive` 等内置工具。如果不需要文档/表格/知识库功能，可以省略这些权限。
 
 #### Step 5 — 启用机器人能力
 
@@ -579,7 +593,13 @@ openclaw plugins install @openclaw/feishu
 
 ### 9.3 在 OpenClaw 中配置飞书 Channel
 
-#### 方式一：使用 CLI（推荐）
+#### 方式一：直接通过OpenClaw 的 Control UI（WebChat）配置
+
+也就是直接在WebChat中，告诉OpenClaw，你要配置飞书机器人，然后提供：
+- **App ID**（格式：`cli_xxx`）
+- **App Secret**
+
+#### 方式二：使用 CLI（推荐）
 
 ```bash
 openclaw channels add
@@ -587,7 +607,7 @@ openclaw channels add
 
 选择 **Feishu**，然后输入你的 App ID 和 App Secret。
 
-#### 方式二：手动编辑配置文件
+#### 方式三：手动编辑配置文件
 
 ```bash
 nano ~/.openclaw/openclaw.json
@@ -634,9 +654,10 @@ openclaw logs --follow
 
 ### 9.5 配对飞书用户
 
-1. 在飞书中找到你刚创建的机器人，发送一条消息
-2. 机器人会回复一个 **配对码**（pairing code）
-3. 在 VM 上执行：
+1. 在飞书中找到你的机器人：搜索机器人名称，或在 **工作台** → **应用列表** 中找到它
+2. 发送一条消息（如 `你好！`）
+3. 机器人会回复一个 **配对码**（pairing code）
+4. 在 VM 上执行：
 
 ```bash
 # 查看配对请求
@@ -646,7 +667,7 @@ openclaw pairing list feishu
 openclaw pairing approve feishu <配对码>
 ```
 
-4. 配对完成后，你就可以正常和 AI 助手对话了！
+5. 配对完成后，你就可以正常和 AI 助手对话了！
 
 ### 9.6 飞书群聊配置（可选）
 
@@ -675,6 +696,116 @@ openclaw pairing approve feishu <配对码>
 **获取群 ID（chat_id）**：
 1. 启动 Gateway 并在群中 @机器人
 2. 运行 `openclaw logs --follow` 查看日志中的 `chat_id`
+
+### 9.7 飞书高级配置（可选）
+
+#### 访问控制模式
+
+**开放模式**（允许所有人直接对话，无需配对）：
+
+```jsonc
+{
+  "channels": {
+    "feishu": {
+      "dmPolicy": "open",
+      "allowFrom": ["*"]
+    }
+  }
+}
+```
+
+**白名单模式**（仅允许指定用户）：
+
+```jsonc
+{
+  "channels": {
+    "feishu": {
+      "dmPolicy": "allowlist",
+      "allowFrom": ["ou_用户ID1", "ou_用户ID2"]
+    }
+  }
+}
+```
+
+> **获取用户 ID（open_id）**：让用户给机器人发消息，然后在日志中查找 `open_id`（格式 `ou_xxxxx`）：
+> ```bash
+> openclaw logs --follow
+> ```
+> 或查看配对请求列表：`openclaw pairing list feishu`
+
+#### 流式输出控制
+
+飞书默认启用流式输出（通过交互卡片实时更新回复）。如果你更希望等待完整回复后再发送：
+
+```jsonc
+{
+  "channels": {
+    "feishu": {
+      "streaming": false
+    }
+  }
+}
+```
+
+#### 消息引用模式
+
+在群聊中控制机器人是否引用原始消息：
+
+```jsonc
+{
+  "channels": {
+    "feishu": {
+      "replyToMode": "all"
+    }
+  }
+}
+```
+
+- `"all"` — 始终引用原始消息
+- `"first"` — 仅引用第一条消息
+- `"off"` — 不引用
+
+#### API 配额优化
+
+如果你遇到飞书 API 调用频率限制，可以关闭非必要的 API 调用：
+
+```jsonc
+{
+  "channels": {
+    "feishu": {
+      "typingIndicator": false,
+      "resolveSenderNames": false
+    }
+  }
+}
+```
+
+- `typingIndicator: false` — 跳过"正在输入"状态的 API 调用
+- `resolveSenderNames: false` — 跳过发送者名称查询的 API 调用
+
+### 9.8 飞书聊天命令
+
+在飞书对话中可以直接发送以下命令：
+
+| 命令 | 说明 |
+|------|------|
+| `/status` | 查看机器人状态和使用统计 |
+| `/reset` | 重置当前对话会话 |
+| `/model` | 查看或切换 AI 模型 |
+| `/compact` | 压缩会话上下文 |
+| `/think <level>` | 设置思考深度（off/minimal/low/medium/high/xhigh） |
+
+> **注意**：飞书不支持原生命令菜单，这些命令需要以普通文本消息发送。
+
+### 9.9 飞书内置工具
+
+配置完成后，OpenClaw 可以通过内置工具直接操作飞书平台资源：
+
+- **`feishu_doc`** — 读写飞书文档
+- **`feishu_wiki`** — 管理飞书知识库
+- **`feishu_drive`** — 管理飞书云空间文件
+
+> 这些工具需要在 Step 4 中配置 `docs:document.content:read`、`sheets:spreadsheet`、`wiki:wiki:readonly` 等权限。
 
 ---
 
